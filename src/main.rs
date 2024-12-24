@@ -19,12 +19,10 @@ use sha3::{Keccak256, Digest};
 use k256::PublicKey;
 use std::error::Error;
 
-
 struct EthKeyPair {
     private_key: String,
     public_key: String,
 }
-
 
 fn generate_eth_keypair() -> EthKeyPair {
     // Generate a new signing key - note we are using the OsRng seed. ICP smart 
@@ -56,6 +54,8 @@ fn create_signature(private_key: String, message_to_sign: String) -> Result<Stri
     let digest = Keccak256::new_with_prefix(message_to_sign.to_string());
     let (signature, recid) = signing_key.sign_digest_recoverable(digest)?;
 
+    println!("recid {:#?}", recid);
+
     // Convert the signature and recovery ID to bytes and combine them 
     let mut combined_signature = signature.to_bytes().to_vec();  
     combined_signature.push(recid.to_byte());
@@ -86,26 +86,41 @@ fn get_ethereum_address(public_key_hex: &String) -> Result<String, Box<dyn std::
 }
 
 fn validate_signature(signature: String, address: String, message: String) -> Result<bool, Box<dyn std::error::Error>> {
+    println!("Inside validate_signature");
+    
     // The signature has the 64 bytes of signature and the recid as the 65th byte
     let combined_signature_bytes = decode(signature)?;
+
+    println!("combined_signature_bytes {:#?}", combined_signature_bytes);
+    println!("combined_signature_bytes.len() {:#?}", combined_signature_bytes.len());
 
     // Gere we separate them out
     let (signature_bytes, recid_byte) = 
         combined_signature_bytes.split_at(combined_signature_bytes.len() - 1);
 
+    println!("signature_bytes {:#?}", signature_bytes);
+    println!("recid_byte {:#?}", recid_byte);
+
     let recid_single_byte = recid_byte[0];
+    println!("recid_single_byte {:#?}", recid_single_byte);
 
     // let signature = Signature::try_from(value)  try_from(signature_as_bytes).as_slice();
-    let signature = Signature::from_der(&signature_bytes)?;
+    // let signature = Signature::from_der(&signature_bytes)?;
+    let signature = Signature::try_from(signature_bytes)?;
+    println!("signature {:#?}", signature);
     
     let recid = RecoveryId::try_from(recid_single_byte)?;
     let digest = Keccak256::new_with_prefix(message);
+
+    println!("digest {:#?}", digest);
 
     let recovered_key = VerifyingKey::recover_from_digest(
         digest,
         &signature,
         recid
     )?;
+
+    println!("recovered_key {:#?}", recovered_key);
 
     let encoded_point = recovered_key.to_encoded_point(false);
     let recovered_public_key_bytes = encoded_point.as_bytes();
