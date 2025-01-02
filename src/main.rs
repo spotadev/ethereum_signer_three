@@ -40,6 +40,9 @@ fn generate_eth_keypair() -> EthKeyPair {
     let verifying_key = signing_key.verifying_key();
     let encoded_point = verifying_key.to_encoded_point(false); // Store the encoded point
     let public_key_bytes = encoded_point.as_bytes(); // Use the bytes from the stored encoded point
+
+    println!("public_key_bytes {:#?}", public_key_bytes);
+
     let public_key_hex = hex::encode(public_key_bytes);
 
     EthKeyPair {
@@ -63,7 +66,7 @@ fn create_signature(private_key: String, message_to_sign: String) -> Result<Stri
 
     // Convert the signature and recovery ID to bytes and combine them 
     let mut combined_signature = signature.to_bytes().to_vec();  
-    combined_signature.push(recid.to_byte());
+    combined_signature.push(recid.to_byte() + 27);
     let signature_in_hex = encode(combined_signature);
     return Ok(signature_in_hex);
 }
@@ -90,7 +93,8 @@ fn get_ethereum_address(public_key_hex: &String) -> Result<String, Box<dyn std::
     return Ok(address_hex);
 }
 
-fn validate_signature(signature: String, address: String, message: String) -> Result<bool, Box<dyn std::error::Error>> {
+fn validate_signature(
+    signature: String, address: String, message: String) -> Result<bool, Box<dyn std::error::Error>> {
     println!("Inside validate_signature");
     
     // The signature has the 64 bytes of signature and the recid as the 65th byte
@@ -114,7 +118,7 @@ fn validate_signature(signature: String, address: String, message: String) -> Re
     let signature = Signature::try_from(signature_bytes)?;
     println!("signature {:#?}", signature);
     
-    let recid = RecoveryId::try_from(recid_single_byte)?;
+    let recid = RecoveryId::try_from(recid_single_byte - 27)?;
     let digest = Keccak256::new_with_prefix(message);
 
     println!("digest in validate_signature {:#?}", digest.clone().finalize_fixed());
@@ -138,7 +142,12 @@ fn validate_signature(signature: String, address: String, message: String) -> Re
     let recovered_address_bytes = 
         &recovered_hash_public_key[recovered_hash_public_key.len() - 20..];
 
+    
     let recovered_address_hex = format!("0x{}", hex::encode(recovered_address_bytes));
+    
+    println!("recovered_address_bytes: {:#?}", recovered_address_bytes);
+    println!("address {}", address);
+    println!("recovered_address_hex {}", recovered_address_hex);
     Ok(recovered_address_hex.to_lowercase() == address.to_lowercase())
 }
 
