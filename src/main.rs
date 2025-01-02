@@ -19,6 +19,8 @@ use sha3::{Keccak256, Digest};
 use k256::PublicKey;
 use std::error::Error;
 
+use sha3::digest::FixedOutput;
+
 struct EthKeyPair {
     private_key: String,
     public_key: String,
@@ -52,6 +54,9 @@ fn create_signature(private_key: String, message_to_sign: String) -> Result<Stri
     let private_key_array: &GenericArray<u8, U32> = GenericArray::from_slice(&private_key_bytes); 
     let signing_key: SigningKey<Secp256k1> = SigningKey::from_bytes(&private_key_array)?;
     let digest = Keccak256::new_with_prefix(message_to_sign.to_string());
+    
+    println!("digest in create_signature: {:#?}", digest.clone().finalize_fixed());
+
     let (signature, recid) = signing_key.sign_digest_recoverable(digest)?;
 
     println!("recid {:#?}", recid);
@@ -112,7 +117,7 @@ fn validate_signature(signature: String, address: String, message: String) -> Re
     let recid = RecoveryId::try_from(recid_single_byte)?;
     let digest = Keccak256::new_with_prefix(message);
 
-    println!("digest {:#?}", digest);
+    println!("digest in validate_signature {:#?}", digest.clone().finalize_fixed());
 
     let recovered_key = VerifyingKey::recover_from_digest(
         digest,
