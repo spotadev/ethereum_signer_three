@@ -23,6 +23,7 @@ use k256::{
 use rand_core::OsRng;
 use sha3::{Digest, Keccak256};
 
+#[derive(Debug)]
 struct EthKeyPair {
     private_key: String,
     public_key: String,
@@ -37,11 +38,34 @@ fn keccak256(data: &[u8]) -> [u8; 32] {
     output
 }
 
+// Implements the Ethereum message signing prefix
+// to ensure compatibility with Ethereum's signature scheme
 fn eth_message(message: &str) -> Vec<u8> {
     let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
     let mut eth_message = prefix.as_bytes().to_vec();
     eth_message.extend_from_slice(message.as_bytes());
     eth_message
+}
+
+// Handle Ethereum's checksum address format (EIP-55) to ensure
+// address case matching
+fn to_checksum_address(address: &str) -> String {
+    let address = address.trim_start_matches("0x").to_lowercase();
+    let address_hash = encode(keccak256(address.as_bytes()));
+
+    let mut checksum_address = String::with_capacity(42);
+    checksum_address.push_str("0x");
+
+    for (i, ch) in address.chars().enumerate() {
+        let n = u8::from_str_radix(&address_hash[i..i + 1], 16).unwrap();
+        if n >= 8 {
+            checksum_address.push(ch.to_ascii_uppercase());
+        } else {
+            checksum_address.push(ch);
+        }
+    }
+
+    checksum_address
 }
 
 fn generate_eth_keypair() -> EthKeyPair {
@@ -67,6 +91,10 @@ fn generate_eth_keypair() -> EthKeyPair {
     }
 }
 
+// Create a signature for the given message using the private key
+// Returns the signature in hex format
+// Note: Uses proper Keccak256 hasher that implements the Digest trait
+// This is critical for compatibility with Ethereum's signing scheme
 fn create_signature(
     private_key: String,
     message: String,
@@ -76,12 +104,12 @@ fn create_signature(
     let signing_key: SigningKey<Secp256k1> = SigningKey::from_bytes(private_key_array)?;
 
     let message_bytes = eth_message(&message);
-    let message_hash = keccak256(&message_bytes);
     println!("Message bytes: {:#?}", message_bytes);
-    println!("Message hash in create_signature: {:#?}", message_hash);
 
     let mut hasher = Keccak256::new();
-    hasher.update(&message_hash);
+    hasher.update(&message_bytes);
+    let message_hash = hasher.clone().finalize();
+    println!("Message hash in create_signature: {:#?}", message_hash);
 
     let (signature, recid) = signing_key.sign_digest_recoverable(hasher)?;
     println!("signature: {:#?}", signature);
@@ -95,14 +123,16 @@ fn create_signature(
 fn get_ethereum_address(public_key_hex: &String) -> Result<String, Box<dyn std::error::Error>> {
     let public_key_bytes = decode(public_key_hex)?;
 
+    // Skip the first byte (0x04) which indicates uncompressed public key format
     let mut hasher = Keccak256::new();
     hasher.update(&public_key_bytes[1..]);
     let hash = hasher.finalize();
 
-    let address_bytes = &hash[12..];
-    Ok(format!("0x{}", encode(address_bytes)))
+    let raw_address = format!("0x{}", encode(&hash[12..]));
+    Ok(to_checksum_address(&raw_address))
 }
 
+// Validate the signature against the provided address and message
 fn validate_signature(
     signature: String,
     address: String,
@@ -127,12 +157,12 @@ fn validate_signature(
     println!("signature: {:#?}", signature);
 
     let message_bytes = eth_message(&message);
-    let message_hash = keccak256(&message_bytes);
     println!("Message bytes in validate_signature: {:#?}", message_bytes);
-    println!("digest in validate_signature: {:#?}", message_hash);
 
     let mut hasher = Keccak256::new();
-    hasher.update(&message_hash);
+    hasher.update(&message_bytes);
+    let digest = hasher.clone().finalize();
+    println!("digest in validate_signature: {:#?}", digest);
 
     let recovered_key = VerifyingKey::recover_from_digest(hasher, &signature, recovery_id)?;
     println!("recovered_key: {:#?}", recovered_key);
@@ -143,10 +173,13 @@ fn validate_signature(
     let hash = hasher.finalize();
 
     let recovered_address = format!("0x{}", encode(&hash[12..]));
-    println!("recovered_address_hex: {}", recovered_address);
-    println!("address: {}", address);
+    let recovered_checksum = to_checksum_address(&recovered_address);
+    let input_checksum = to_checksum_address(&address);
 
-    Ok(recovered_address.to_lowercase() == address.to_lowercase())
+    println!("recovered_address_hex: {}", recovered_checksum);
+    println!("address: {}", input_checksum);
+
+    Ok(recovered_checksum == input_checksum)
 }
 
 fn main() {
